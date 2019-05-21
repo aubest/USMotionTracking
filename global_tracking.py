@@ -26,16 +26,24 @@ def get_next_center(k, stop_temporal, c1_prev, c2_prev, img_current,
                     c1_init, c2_init, logger=None,
                     est_c1=None, est_c2=None, c1_hist=None, c2_hist=None):
     xax, yax = find_template_pixel(c1_prev, c2_prev,
-                                   params_dict['width'], img_current.shape[1], img_current.shape[0])
-    template_current = img_current[np.ravel(
+                                   60, img_current.shape[1], img_current.shape[0])
+    template_current_1 = img_current[np.ravel(
+        yax), np.ravel(xax)].reshape(1, len(yax), len(xax))
+    xax, yax = find_template_pixel(c1_prev, c2_prev,
+                                   120, img_current.shape[1], img_current.shape[0])
+    template_current_2 = img_current[np.ravel(
+        yax), np.ravel(xax)].reshape(1, len(yax), len(xax))
+    xax, yax = find_template_pixel(c1_prev, c2_prev,
+                                   30, img_current.shape[1], img_current.shape[0])
+    template_current_3 = img_current[np.ravel(
         yax), np.ravel(xax)].reshape(1, len(yax), len(xax))
     current_centers = np.asarray([c1_prev, c2_prev]).reshape(1, 2)
     pred1 = model1.predict(
-        x=[template_current, template_init_1, current_centers])
+        x=[template_current_1, template_init_1, current_centers])
     pred2 = model2.predict(
-        x=[template_current, template_init_2, current_centers])
+        x=[template_current_2, template_init_2, current_centers])
     pred3 = model3.predict(
-        x=[template_current, template_init_3, current_centers])
+        x=[template_current_3, template_init_3, current_centers])
     c1_net1, c2_net1 = pred1[0, 0], pred1[0, 1]
     c1_net2, c2_net2 = pred2[0, 0], pred2[0, 1]
     c1_net3, c2_net3 = pred3[0, 0], pred3[0, 1]
