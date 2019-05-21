@@ -19,24 +19,28 @@ CLUST Challenge
 '''
 
 
-def get_next_center(k, stop_temporal, c1_prev, c2_prev, img_prev, img_current,
-                    params_dict, model, template_init, c1_init, c2_init, logger=None, est_c1=None, est_c2=None, c1_hist=None, c2_hist=None):
-    # c1, c2, maxNCC = NCC_best_template_search(c1_prev,
-    #                                           c2_prev,
-    #                                           img_prev,
-    #                                           img_current,
-    #                                           width=params_dict['width'],
-    #                                           search_w=params_dict['search_w'])
+def get_next_center(k, stop_temporal, c1_prev, c2_prev, img_current,
+                    params_dict,
+                    model1, model2, model3,
+                    template_init_1, template_init_2, template_init_3,
+                    c1_init, c2_init, logger=None,
+                    est_c1=None, est_c2=None, c1_hist=None, c2_hist=None):
     xax, yax = find_template_pixel(c1_prev, c2_prev,
                                    params_dict['width'], img_current.shape[1], img_current.shape[0])
     template_current = img_current[np.ravel(
         yax), np.ravel(xax)].reshape(1, len(yax), len(xax))
     current_centers = np.asarray([c1_prev, c2_prev]).reshape(1, 2)
-    pred = model.predict(
-        x=[template_current, template_init, current_centers])
-    old_c1, old_c2 = c1_prev, c2_prev
-    c1, c2 = pred[0, 0], pred[0, 1]
-    c1_net , c2_net = c1, c2
+    pred1 = model1.predict(
+        x=[template_current, template_init_1, current_centers])
+    pred2 = model2.predict(
+        x=[template_current, template_init_2, current_centers])
+    pred3 = model3.predict(
+        x=[template_current, template_init_3, current_centers])
+    c1_net1, c2_net1 = pred1[0, 0], pred1[0, 1]
+    c1_net2, c2_net2 = pred2[0, 0], pred2[0, 1]
+    c1_net3, c2_net3 = pred3[0, 0], pred3[0, 1]
+    c1, c2 = np.mean([c1_net1, c1_net2, c1_net3]), np.mean(
+        [c2_net1, c2_net2, c2_net3])
     if est_c1 is not None and not stop_temporal:
         c1_temp = est_c1.predict(c1_hist.reshape(1, -1))
         c2_temp = est_c2.predict(c2_hist.reshape(1, -1))
@@ -45,26 +49,24 @@ def get_next_center(k, stop_temporal, c1_prev, c2_prev, img_prev, img_current,
                 print('WARN: using temporal pred')
             else:
                 logger.info('WARN: using temporal pred')
-                #logger.info('temp {}, {}'.format(c1_temp, c2_temp))
-                #logger.info('net {}, {}'.format(c1, c2))
             c1, c2 = np.mean([c1_temp, c1]), np.mean([c2_temp, c2])
     if ((np.abs(c1-c1_init) > 30) or (np.abs(c2-c2_init) > 30)):
         k += 1
     else:
         k = 0
-    if (k>50):
+    if (k > 50):
         logger.info('WARN: absurd prediction - remove temporal model')
         stop_temporal = True
         logger.info('keep init')
         c1, c2 = c1_init, c2_init
         k = 0
     try:
-        assert (np.abs(c1-c1_prev)<6)
-        assert (np.abs(c2-c2_prev)<6)
+        assert (np.abs(c1-c1_prev) < 6)
+        assert (np.abs(c2-c2_prev) < 6)
     except AssertionError:
         print(np.abs(c1-c1_prev))
         print(np.abs(c2-c2_prev))
-    return c1, c2, old_c1, old_c2, stop_temporal, k
+    return c1, c2, stop_temporal, k
 
 
 def run_global_cv(fold_iterator, data_dir, checkpoint_dir, logger, params_dict, upsample=True):
@@ -81,10 +83,10 @@ def run_global_cv(fold_iterator, data_dir, checkpoint_dir, logger, params_dict, 
         validation_generator = DataLoader(
             data_dir, testdirs, 32,
             width_template=params_dict['width'],
-            type='val', upsample=upsample)   
-        model, est_c1, est_c2 = train(traindirs, data_dir, upsample,
-                                      params_dict, checkpoint_dir,
-                                      logger, validation_generator)
+            type='val', upsample=upsample)
+        model1, model2, model3, est_c1, est_c2 = train(traindirs, data_dir, upsample,
+                                                       params_dict, checkpoint_dir,
+                                                       logger, validation_generator)
         """
         model = create_model(params_dict['width']+1,
                          params_dict['h1'],
@@ -102,8 +104,8 @@ def run_global_cv(fold_iterator, data_dir, checkpoint_dir, logger, params_dict, 
         curr_fold_pix = []
         for k, testfolder in enumerate(testdirs):
             res_x, res_y = training_generator.resolution_df.loc[
-                    training_generator.resolution_df['scan']
-                    == testfolder, ['res_x', 'res_y']].values[0]
+                training_generator.resolution_df['scan']
+                == testfolder, ['res_x', 'res_y']].values[0]
             annotation_dir = os.path.join(data_dir, testfolder, 'Annotation')
             img_dir = os.path.join(data_dir, testfolder, 'Data')
             list_imgs = [os.path.join(img_dir, dI)
@@ -145,12 +147,20 @@ def run_global_cv(fold_iterator, data_dir, checkpoint_dir, logger, params_dict, 
                 else:
                     list_centers = [[c1_init, c2_init]]
                 xax, yax = find_template_pixel(c1_init, c2_init,
-                                               params_dict['width'], img_init.shape[1], img_init.shape[0])
-                template_init = img_init[np.ravel(yax), np.ravel(
+                                               60, img_init.shape[1], img_init.shape[0])
+                template_init_1 = img_init[np.ravel(yax), np.ravel(
+                    xax)].reshape(1, len(yax), len(xax))
+                xax, yax = find_template_pixel(c1_init, c2_init,
+                                               120, img_init.shape[1], img_init.shape[0])
+                template_init_2 = img_init[np.ravel(yax), np.ravel(
+                    xax)].reshape(1, len(yax), len(xax))
+                xax, yax = find_template_pixel(c1_init, c2_init,
+                                               30, img_init.shape[1], img_init.shape[0])
+                template_init_3 = img_init[np.ravel(yax), np.ravel(
                     xax)].reshape(1, len(yax), len(xax))
                 c1, c2 = c1_init, c2_init
                 stop_temporal = False
-                k = 0 
+                k = 0
                 for i in range(2, len(list_imgs)+1):
                     if i % 100 == 0:
                         print(i)
@@ -166,11 +176,21 @@ def run_global_cv(fold_iterator, data_dir, checkpoint_dir, logger, params_dict, 
                     if i > 5:
                         tmp = list_centers[-10:].reshape(-1, 2)
                         assert tmp.shape[0] == 5
-                        c1, c2, old_c1, old_c2, stop_temporal, k = get_next_center(k, stop_temporal,
-                            c1, c2, img_prev, img_current, params_dict, model, template_init, c1_init, c2_init, logger, est_c1, est_c2, tmp[:, 0], tmp[:, 1])
+                        c1, c2, stop_temporal, k = get_next_center(k, stop_temporal,
+                                                                   c1, c2,
+                                                                   img_current,
+                                                                   params_dict,
+                                                                   model1, model2, model3,
+                                                                   template_init_1, template_init_2, template_init_3,
+                                                                   c1_init, c2_init, logger, est_c1, est_c2, tmp[:, 0], tmp[:, 1])
                     else:
-                        c1, c2, old_c1, old_c2, stop_temporal, k  = get_next_center(k, stop_temporal,
-                            c1, c2, img_prev, img_current, params_dict, model, template_init, c1_init, c2_init, logger)
+                        c1, c2, stop_temporal, k = get_next_center(k, stop_temporal,
+                                                                   c1, c2,
+                                                                   img_current,
+                                                                   params_dict,
+                                                                   model1, model2, model3,
+                                                                   template_init_1, template_init_2, template_init_3,
+                                                                   c1_init, c2_init, logger)
                     # project back in init coords
                     if upsample:
                         c1_orig_coords = c1*0.4/res_x
@@ -252,7 +272,21 @@ def train(traindirs, data_dir, upsample, params_dict, checkpointdir, logger, val
         width_template=params_dict['width'], upsample=upsample)
     earl = keras.callbacks.EarlyStopping(monitor='val_loss', patience=3)
     # Design model
-    model = create_model(params_dict['width']+1,
+    model1 = create_model(60+1,
+                         params_dict['h1'],
+                         params_dict['h2'],
+                         params_dict['h3'],
+                         embed_size=params_dict['embed_size'],
+                         drop_out_rate=params_dict['dropout_rate'],
+                         use_batch_norm=params_dict['use_batchnorm'])
+    model2 = create_model(120+1,
+                         params_dict['h1'],
+                         params_dict['h2'],
+                         params_dict['h3'],
+                         embed_size=params_dict['embed_size'],
+                         drop_out_rate=params_dict['dropout_rate'],
+                         use_batch_norm=params_dict['use_batchnorm'])
+    model3 = create_model(30+1,
                          params_dict['h1'],
                          params_dict['h2'],
                          params_dict['h3'],
@@ -261,13 +295,33 @@ def train(traindirs, data_dir, upsample, params_dict, checkpointdir, logger, val
                          use_batch_norm=params_dict['use_batchnorm'])
     # Train local Net
     if validation_gen is None:
-        model.fit_generator(generator=training_generator,
+        model1.fit_generator(generator=training_generator,
+                            use_multiprocessing=True,
+                            epochs=params_dict['n_epochs'],
+                            workers=4, max_queue_size=20,
+                            callbacks=[earl])
+        model2.fit_generator(generator=training_generator,
+                            use_multiprocessing=True,
+                            epochs=params_dict['n_epochs'],
+                            workers=4, max_queue_size=20,
+                            callbacks=[earl])
+        model3.fit_generator(generator=training_generator,
                             use_multiprocessing=True,
                             epochs=params_dict['n_epochs'],
                             workers=4, max_queue_size=20,
                             callbacks=[earl])
     else:
-        model.fit_generator(generator=training_generator,
+        model1.fit_generator(generator=training_generator,
+                            validation_data=validation_gen,
+                            use_multiprocessing=True,
+                            epochs=params_dict['n_epochs'],
+                            workers=4, max_queue_size=20)
+        model2.fit_generator(generator=training_generator,
+                            validation_data=validation_gen,
+                            use_multiprocessing=True,
+                            epochs=params_dict['n_epochs'],
+                            workers=4, max_queue_size=20)
+        model3.fit_generator(generator=training_generator,
                             validation_data=validation_gen,
                             use_multiprocessing=True,
                             epochs=params_dict['n_epochs'],
@@ -277,7 +331,7 @@ def train(traindirs, data_dir, upsample, params_dict, checkpointdir, logger, val
         logger.info('Stopped epoch {}'.format(earl.stopped_epoch))
     else:
         print('Local Net trained')
-        print('Stopped epoch {}'.format(earl.stopped_epoch))        
+        print('Stopped epoch {}'.format(earl.stopped_epoch))
     # Train the temporal model
     for folder in traindirs:
         if logger is not None:
@@ -351,7 +405,7 @@ def train(traindirs, data_dir, upsample, params_dict, checkpointdir, logger, val
         print('c1')
         print(scores_c1['test_neg_mean_squared_error'])
         print('c2')
-        print(scores_c2['test_neg_mean_squared_error'])        
+        print(scores_c2['test_neg_mean_squared_error'])
     # Fit on the whole training set
     est_c1.fit(fullX, c1_label)
     est_c2.fit(fullY, c2_label)
@@ -361,12 +415,14 @@ def train(traindirs, data_dir, upsample, params_dict, checkpointdir, logger, val
         logger.info('Saving trained models to {}'.format(checkpoint_dir))
     else:
         print('Saving trained models to {}'.format(checkpoint_dir))
-    model.save_weights(os.path.join(checkpoint_dir, 'model.h5'))
+    model1.save_weights(os.path.join(checkpoint_dir, 'model1.h5'))
+    model2.save_weights(os.path.join(checkpoint_dir, 'model2.h5'))
+    model3.save_weights(os.path.join(checkpoint_dir, 'model3.h5'))
     dump(est_c1, os.path.join(checkpoint_dir, 'est_c1.joblib'))
     dump(est_c2, os.path.join(checkpoint_dir, 'est_c2.joblib'))
-    return model, est_c1, est_c2
+    return model1, model2, model3, est_c1, est_c2
 
-
+'''
 def predict(testdirs, checkpoint_dir, data_dir, params_dict, upsample=False, resolution_df=None):
     model = create_model(params_dict['width']+1,
                          params_dict['h1'],
@@ -382,7 +438,7 @@ def predict(testdirs, checkpoint_dir, data_dir, params_dict, upsample=False, res
         res_x, res_y = None, None
         if upsample:
             res_x, res_y = resolution_df.loc[resolution_df['scan']
-                                            == testfolder, ['res_x', 'res_y']].values[0]
+                                             == testfolder, ['res_x', 'res_y']].values[0]
         annotation_dir = os.path.join(data_dir, testfolder, 'Annotation')
         img_dir = os.path.join(data_dir, testfolder, 'Data')
         list_imgs = [os.path.join(img_dir, dI)
@@ -441,11 +497,11 @@ def predict(testdirs, checkpoint_dir, data_dir, params_dict, upsample=False, res
                 if i > 5:
                     tmp = list_centers[-10:].reshape(-1, 2)
                     assert tmp.shape[0] == 5
-                    c1, c2, old_c1, old_c2 = get_next_center(
-                        c1, c2, img_prev, img_current, params_dict, model, template_init, logger, est_c1, est_c2, tmp[:, 0], tmp[:, 1])
+                    c1, c2 = get_next_center(
+                        c1, c2, img_current, params_dict, model, template_init, logger, est_c1, est_c2, tmp[:, 0], tmp[:, 1])
                 else:
-                    c1, c2, old_c1, old_c2 = get_next_center(
-                        c1, c2, img_prev, img_current, params_dict, model, template_init, logger)
+                    c1, c2 = get_next_center(
+                        c1, c2, img_current, params_dict, model, template_init, logger)
                 # project back in init coords
                 if upsample:
                     c1_orig_coords = c1*0.4/res_x
@@ -462,6 +518,7 @@ def predict(testdirs, checkpoint_dir, data_dir, params_dict, upsample=False, res
             pred_df['c2'] = list_centers[:, 1]
             pred_df.to_csv(os.path.join(checkpoint_dir, '{}.txt'.format(
                 label_file)), header=False, index=False, sep='\s')
+'''
 
 if __name__ == '__main__':
     np.random.seed(seed=42)
@@ -496,4 +553,5 @@ if __name__ == '__main__':
 
     sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
     tf.keras.backend.set_session(sess)
-    run_global_cv(fold_iterator, data_dir, checkpoint_dir, logger, params_dict, upsample=False)
+    run_global_cv(fold_iterator, data_dir, checkpoint_dir,
+                  logger, params_dict, upsample=False)
