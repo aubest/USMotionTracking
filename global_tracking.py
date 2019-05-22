@@ -9,7 +9,6 @@ import pandas as pd
 from tensorflow import keras
 from utils import get_logger, get_default_params
 import tensorflow as tf
-import parmap
 from sklearn.linear_model import RidgeCV
 from sklearn.model_selection import cross_validate
 from joblib import dump, load
@@ -99,9 +98,25 @@ def run_global_cv(fold_iterator, data_dir, checkpoint_dir, logger, params_dict, 
         # Generators
         logger.info('############ FOLD #############')
         logger.info('Training folders are {}'.format(traindirs))
-        model1, model2, model3, est_c1, est_c2, res_df = train(traindirs, data_dir, upsample,
-                                                       params_dict, checkpoint_dir,
-                                                       logger, testdirs)
+        """
+        model1, est_c1, est_c2, res_df = train(traindirs, data_dir, upsample,
+                                               params_dict, checkpoint_dir,
+                                               logger, testdirs)
+        """
+        training_generator_1 = DataLoader(
+            data_dir, traindirs, 32,
+            width_template=60, upsample=upsample)
+        res_df = training_generator_1.resolution_df
+        model = create_model(params_dict['width']+1,
+                             params_dict['h1'],
+                             params_dict['h2'],
+                             params_dict['h3'],
+                             embed_size=params_dict['embed_size'],
+                             drop_out_rate=params_dict['dropout_rate'],
+                             use_batch_norm=params_dict['use_batchnorm'])
+        model.load_weights(os.path.join(checkpoint_dir, 'model.h5'))
+        est_c1 = load(os.path.join(checkpoint_dir, 'est_c1.joblib'))
+        est_c2 = load(os.path.join(checkpoint_dir, 'est_c2.joblib'))
         # PREDICT WITH GLOBAL MATCHING + LOCAL MODEL ON TEST SET
         curr_fold_dist = []
         curr_fold_pix = []
@@ -183,7 +198,7 @@ def run_global_cv(fold_iterator, data_dir, checkpoint_dir, logger, params_dict, 
                                                                    c1, c2,
                                                                    img_current,
                                                                    params_dict,
-                                                                   model1, model2, model3,
+                                                                   model1,
                                                                    template_init_1, template_init_2, template_init_3,
                                                                    c1_init, c2_init, logger, est_c1, est_c2, tmp[:, 0], tmp[:, 1])
                     else:
@@ -191,7 +206,7 @@ def run_global_cv(fold_iterator, data_dir, checkpoint_dir, logger, params_dict, 
                                                                    c1, c2,
                                                                    img_current,
                                                                    params_dict,
-                                                                   model1, model2, model3,
+                                                                   model1,
                                                                    template_init_1, template_init_2, template_init_3,
                                                                    c1_init, c2_init, logger)
                     # project back in init coords
@@ -265,30 +280,10 @@ def train(traindirs, data_dir, upsample, params_dict, checkpointdir, logger, val
     training_generator_1 = DataLoader(
         data_dir, traindirs, 32,
         width_template=60, upsample=upsample)
-    training_generator_2 = DataLoader(
-        data_dir, traindirs, 32,
-        width_template=120, upsample=upsample)
-    training_generator_3 = DataLoader(
-        data_dir, traindirs, 32,
-        width_template=30, upsample=upsample)
     res_df = training_generator_1.resolution_df
     earl = keras.callbacks.EarlyStopping(monitor='val_loss', patience=3)
     # Design model
     model1 = create_model(60+1,
-                          params_dict['h1'],
-                          params_dict['h2'],
-                          params_dict['h3'],
-                          embed_size=params_dict['embed_size'],
-                          drop_out_rate=params_dict['dropout_rate'],
-                          use_batch_norm=params_dict['use_batchnorm'])
-    model2 = create_model(120+1,
-                          params_dict['h1'],
-                          params_dict['h2'],
-                          params_dict['h3'],
-                          embed_size=params_dict['embed_size'],
-                          drop_out_rate=params_dict['dropout_rate'],
-                          use_batch_norm=params_dict['use_batchnorm'])
-    model3 = create_model(30+1,
                           params_dict['h1'],
                           params_dict['h2'],
                           params_dict['h3'],
@@ -302,38 +297,12 @@ def train(traindirs, data_dir, upsample, params_dict, checkpointdir, logger, val
                              epochs=params_dict['n_epochs'],
                              workers=4, max_queue_size=20,
                              callbacks=[earl])
-        model2.fit_generator(generator=training_generator_2,
-                             use_multiprocessing=True,
-                             epochs=params_dict['n_epochs'],
-                             workers=4, max_queue_size=20,
-                             callbacks=[earl])
-        model3.fit_generator(generator=training_generator_3,
-                             use_multiprocessing=True,
-                             epochs=params_dict['n_epochs'],
-                             workers=4, max_queue_size=20,
-                             callbacks=[earl])
     else:
         val_gen_1 = DataLoader(
             data_dir, validation_dirs, 32,
             width_template=60, upsample=upsample)
-        val_gen_2 = DataLoader(
-            data_dir, validation_dirs, 32,
-            width_template=120, upsample=upsample)
-        val_gen_3 = DataLoader(
-            data_dir, validation_dirs, 32,
-            width_template=30, upsample=upsample)
         model1.fit_generator(generator=training_generator_1,
                              validation_data=val_gen_1,
-                             use_multiprocessing=True,
-                             epochs=params_dict['n_epochs'],
-                             workers=4, max_queue_size=20)
-        model2.fit_generator(generator=training_generator_2,
-                             validation_data=val_gen_2,
-                             use_multiprocessing=True,
-                             epochs=params_dict['n_epochs'],
-                             workers=4, max_queue_size=20)
-        model3.fit_generator(generator=training_generator_3,
-                             validation_data=val_gen_3,
                              use_multiprocessing=True,
                              epochs=params_dict['n_epochs'],
                              workers=4, max_queue_size=20)
@@ -424,11 +393,9 @@ def train(traindirs, data_dir, upsample, params_dict, checkpointdir, logger, val
     else:
         print('Saving trained models to {}'.format(checkpoint_dir))
     model1.save_weights(os.path.join(checkpoint_dir, 'model1.h5'))
-    model2.save_weights(os.path.join(checkpoint_dir, 'model2.h5'))
-    model3.save_weights(os.path.join(checkpoint_dir, 'model3.h5'))
     dump(est_c1, os.path.join(checkpoint_dir, 'est_c1.joblib'))
     dump(est_c2, os.path.join(checkpoint_dir, 'est_c2.joblib'))
-    return model1, model2, model3, est_c1, est_c2, res_df
+    return model1, est_c1, est_c2, res_df
 
 
 '''
