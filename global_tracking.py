@@ -85,16 +85,15 @@ def run_global_cv(fold_iterator, data_dir, checkpoint_dir, logger, params_dict, 
         # Generators
         logger.info('############ FOLD #############')
         logger.info('Training folders are {}'.format(traindirs))
-        model1, model2, model3, est_c1, est_c2 = train(traindirs, data_dir, upsample,
+        model1, model2, model3, est_c1, est_c2, res_df = train(traindirs, data_dir, upsample,
                                                        params_dict, checkpoint_dir,
                                                        logger, testdirs)
         # PREDICT WITH GLOBAL MATCHING + LOCAL MODEL ON TEST SET
         curr_fold_dist = []
         curr_fold_pix = []
         for k, testfolder in enumerate(testdirs):
-            res_x, res_y = training_generator_1.resolution_df.loc[
-                training_generator_1.resolution_df['scan']
-                == testfolder, ['res_x', 'res_y']].values[0]
+            res_x, res_y = res_df.loc[res_df['scan']
+                                      == testfolder, ['res_x', 'res_y']].values[0]
             annotation_dir = os.path.join(data_dir, testfolder, 'Annotation')
             img_dir = os.path.join(data_dir, testfolder, 'Data')
             list_imgs = [os.path.join(img_dir, dI)
@@ -251,6 +250,7 @@ def train(traindirs, data_dir, upsample, params_dict, checkpointdir, logger, val
     training_generator_1 = DataLoader(
         data_dir, traindirs, 32,
         width_template=60, upsample=upsample)
+    res_df = training_generator_1.resolution_df
     training_generator_2 = DataLoader(
         data_dir, traindirs, 32,
         width_template=120, upsample=upsample)
@@ -413,7 +413,7 @@ def train(traindirs, data_dir, upsample, params_dict, checkpointdir, logger, val
     model3.save_weights(os.path.join(checkpoint_dir, 'model3.h5'))
     dump(est_c1, os.path.join(checkpoint_dir, 'est_c1.joblib'))
     dump(est_c2, os.path.join(checkpoint_dir, 'est_c2.joblib'))
-    return model1, model2, model3, est_c1, est_c2
+    return model1, model2, model3, est_c1, est_c2, res_df
 
 
 '''
