@@ -21,34 +21,48 @@ CLUST Challenge
 
 def get_next_center(k, stop_temporal, c1_prev, c2_prev, img_current,
                     params_dict,
-                    model1, model2, model3,
-                    template_init_1, template_init_2, template_init_3,
+                    model1,
+                    template_init_1,
                     c1_init, c2_init, logger=None,
                     est_c1=None, est_c2=None, c1_hist=None, c2_hist=None):
     xax, yax = find_template_pixel(c1_prev, c2_prev,
                                    60, img_current.shape[1], img_current.shape[0])
     template_current_1 = img_current[np.ravel(
         yax), np.ravel(xax)].reshape(1, len(yax), len(xax))
-    xax, yax = find_template_pixel(c1_prev, c2_prev,
-                                   120, img_current.shape[1], img_current.shape[0])
+    xax, yax = find_template_pixel(c1_prev+1, c2_prev+1,
+                                   60, img_current.shape[1], img_current.shape[0])
     template_current_2 = img_current[np.ravel(
         yax), np.ravel(xax)].reshape(1, len(yax), len(xax))
-    xax, yax = find_template_pixel(c1_prev, c2_prev,
-                                   30, img_current.shape[1], img_current.shape[0])
+    xax, yax = find_template_pixel(c1_prev-1, c2_prev+1,
+                                   60, img_current.shape[1], img_current.shape[0])
     template_current_3 = img_current[np.ravel(
+        yax), np.ravel(xax)].reshape(1, len(yax), len(xax))
+    xax, yax = find_template_pixel(c1_prev-1, c2_prev-1,
+                                   60, img_current.shape[1], img_current.shape[0])
+    template_current_4 = img_current[np.ravel(
+        yax), np.ravel(xax)].reshape(1, len(yax), len(xax))
+    xax, yax = find_template_pixel(c1_prev+1, c2_prev-1,
+                                   60, img_current.shape[1], img_current.shape[0])
+    template_current_5 = img_current[np.ravel(
         yax), np.ravel(xax)].reshape(1, len(yax), len(xax))
     current_centers = np.asarray([c1_prev, c2_prev]).reshape(1, 2)
     pred1 = model1.predict(
         x=[template_current_1, template_init_1, current_centers])
-    pred2 = model2.predict(
-        x=[template_current_2, template_init_2, current_centers])
-    pred3 = model3.predict(
-        x=[template_current_3, template_init_3, current_centers])
+    pred2 = model1.predict(
+        x=[template_current_2, template_init_1, current_centers])
+    pred3 = model1.predict(
+        x=[template_current_3, template_init_1, current_centers])
+    pred4 = model1.predict(
+        x=[template_current_4, template_init_1, current_centers])
+    pred5 = model1.predict(
+        x=[template_current_5, template_init_1, current_centers])
     c1_net1, c2_net1 = pred1[0, 0], pred1[0, 1]
     c1_net2, c2_net2 = pred2[0, 0], pred2[0, 1]
     c1_net3, c2_net3 = pred3[0, 0], pred3[0, 1]
-    c1, c2 = np.mean([c1_net1, c1_net2, c1_net3]), np.mean(
-        [c2_net1, c2_net2, c2_net3])
+    c1_net4, c2_net4 = pred4[0, 0], pred4[0, 1]
+    c1_net5, c2_net5 = pred5[0, 0], pred5[0, 1]
+    c1, c2 = np.mean([c1_net1, c1_net2, c1_net3, c1_net4, c1_net5]), np.mean(
+        [c2_net1, c2_net2, c2_net3, c2_net4, c2_net5])
     if est_c1 is not None and not stop_temporal:
         c1_temp = est_c1.predict(c1_hist.reshape(1, -1))
         c2_temp = est_c2.predict(c2_hist.reshape(1, -1))
@@ -85,15 +99,15 @@ def run_global_cv(fold_iterator, data_dir, checkpoint_dir, logger, params_dict, 
         # Generators
         logger.info('############ FOLD #############')
         logger.info('Training folders are {}'.format(traindirs))
-        model1, model2, model3, est_c1, est_c2 = train(traindirs, data_dir, upsample,
+        model1, model2, model3, est_c1, est_c2, res_df = train(traindirs, data_dir, upsample,
                                                        params_dict, checkpoint_dir,
                                                        logger, testdirs)
         # PREDICT WITH GLOBAL MATCHING + LOCAL MODEL ON TEST SET
         curr_fold_dist = []
         curr_fold_pix = []
         for k, testfolder in enumerate(testdirs):
-            res_x, res_y = training_generator_1.resolution_df.loc[
-                training_generator_1.resolution_df['scan']
+            res_x, res_y = res_df.loc[
+                res_df.resolution_df['scan']
                 == testfolder, ['res_x', 'res_y']].values[0]
             annotation_dir = os.path.join(data_dir, testfolder, 'Annotation')
             img_dir = os.path.join(data_dir, testfolder, 'Data')
@@ -257,6 +271,7 @@ def train(traindirs, data_dir, upsample, params_dict, checkpointdir, logger, val
     training_generator_3 = DataLoader(
         data_dir, traindirs, 32,
         width_template=30, upsample=upsample)
+    res_df = training_generator_1.resolution_df
     earl = keras.callbacks.EarlyStopping(monitor='val_loss', patience=3)
     # Design model
     model1 = create_model(60+1,
@@ -413,7 +428,7 @@ def train(traindirs, data_dir, upsample, params_dict, checkpointdir, logger, val
     model3.save_weights(os.path.join(checkpoint_dir, 'model3.h5'))
     dump(est_c1, os.path.join(checkpoint_dir, 'est_c1.joblib'))
     dump(est_c2, os.path.join(checkpoint_dir, 'est_c2.joblib'))
-    return model1, model2, model3, est_c1, est_c2
+    return model1, model2, model3, est_c1, est_c2, res_df
 
 
 '''
