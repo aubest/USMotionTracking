@@ -87,25 +87,13 @@ def run_global_cv(fold_iterator, data_dir, checkpoint_dir, logger, params_dict, 
         logger.info('Training folders are {}'.format(traindirs))
         model1, model2, model3, est_c1, est_c2 = train(traindirs, data_dir, upsample,
                                                        params_dict, checkpoint_dir,
-                                                       logger, val_dirs=testdirs)
-        """
-        model = create_model(params_dict['width']+1,
-                         params_dict['h1'],
-                         params_dict['h2'],
-                         params_dict['h3'],
-                         embed_size=params_dict['embed_size'],
-                         drop_out_rate=params_dict['dropout_rate'],
-                         use_batch_norm=params_dict['use_batchnorm'])
-        model.load_weights(os.path.join(checkpoint_dir, 'model.h5'))
-        est_c1 = load(os.path.join(checkpoint_dir, 'est_c1.joblib'))
-        est_c2 = load(os.path.join(checkpoint_dir, 'est_c2.joblib'))
-        """
+                                                       logger, testdirs)
         # PREDICT WITH GLOBAL MATCHING + LOCAL MODEL ON TEST SET
         curr_fold_dist = []
         curr_fold_pix = []
         for k, testfolder in enumerate(testdirs):
-            res_x, res_y = training_generator.resolution_df.loc[
-                training_generator.resolution_df['scan']
+            res_x, res_y = training_generator_1.resolution_df.loc[
+                training_generator_1.resolution_df['scan']
                 == testfolder, ['res_x', 'res_y']].values[0]
             annotation_dir = os.path.join(data_dir, testfolder, 'Annotation')
             img_dir = os.path.join(data_dir, testfolder, 'Data')
@@ -214,17 +202,9 @@ def run_global_cv(fold_iterator, data_dir, checkpoint_dir, logger, params_dict, 
                             logger.info('ID {} : euclidean dist diff {}'
                                         .format(i, dist))
                         if dist > 10:
-                            # logger.info(
-                            #     'Bad dist - maxNCC was {}'.format(maxNCC))
                             logger.info('True {},{}'.format(true[0], true[1]))
                             logger.info('Pred {},{}'.format(
                                 c1_orig_coords, c2_orig_coords))
-                            if upsample:
-                                logger.info('Previous {},{}'.format(
-                                    old_c1*0.4/res_x, old_c2*0.4/res_y))
-                            else:
-                                logger.info('Previous {},{}'.format(
-                                    old_c1, old_c2))
                 idx = df.id.values.astype(int)
                 list_centers = list_centers.reshape(-1, 2)
                 df_preds = list_centers[idx-1]
