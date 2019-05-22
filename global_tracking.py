@@ -44,6 +44,22 @@ def get_next_center(k, stop_temporal, c1_prev, c2_prev, img_current,
                                    60, img_current.shape[1], img_current.shape[0])
     template_current_5 = img_current[np.ravel(
         yax), np.ravel(xax)].reshape(1, len(yax), len(xax))
+    xax, yax = find_template_pixel(c1_prev, c2_prev-1,
+                                   60, img_current.shape[1], img_current.shape[0])
+    template_current_6 = img_current[np.ravel(
+        yax), np.ravel(xax)].reshape(1, len(yax), len(xax))
+    xax, yax = find_template_pixel(c1_prev, c2_prev+1,
+                                   60, img_current.shape[1], img_current.shape[0])
+    template_current_7 = img_current[np.ravel(
+        yax), np.ravel(xax)].reshape(1, len(yax), len(xax))
+    xax, yax = find_template_pixel(c1_prev-1, c2_prev,
+                                   60, img_current.shape[1], img_current.shape[0])
+    template_current_8 = img_current[np.ravel(
+        yax), np.ravel(xax)].reshape(1, len(yax), len(xax))
+    xax, yax = find_template_pixel(c1_prev+1, c2_prev,
+                                   60, img_current.shape[1], img_current.shape[0])
+    template_current_9 = img_current[np.ravel(
+        yax), np.ravel(xax)].reshape(1, len(yax), len(xax))
     current_centers = np.asarray([c1_prev, c2_prev]).reshape(1, 2)
     pred1 = model1.predict(
         x=[template_current_1, template_init_1, current_centers])
@@ -55,13 +71,21 @@ def get_next_center(k, stop_temporal, c1_prev, c2_prev, img_current,
         x=[template_current_4, template_init_1, current_centers])
     pred5 = model1.predict(
         x=[template_current_5, template_init_1, current_centers])
-    c1_net1, c2_net1 = pred1[0, 0], pred1[0, 1]
-    c1_net2, c2_net2 = pred2[0, 0], pred2[0, 1]
-    c1_net3, c2_net3 = pred3[0, 0], pred3[0, 1]
-    c1_net4, c2_net4 = pred4[0, 0], pred4[0, 1]
-    c1_net5, c2_net5 = pred5[0, 0], pred5[0, 1]
-    c1, c2 = np.mean([c1_net1, c1_net2, c1_net3, c1_net4, c1_net5]), np.mean(
-        [c2_net1, c2_net2, c2_net3, c2_net4, c2_net5])
+    pred6 = model1.predict(
+        x=[template_current_6, template_init_1, current_centers])
+    pred7 = model1.predict(
+        x=[template_current_7, template_init_1, current_centers])
+    pred8 = model1.predict(
+        x=[template_current_8, template_init_1, current_centers])
+    pred9 = model1.predict(
+        x=[template_current_9, template_init_1, current_centers])
+    c1 = np.mean([pred1[0, 0], pred2[0, 0], pred3[0, 0],
+                  pred4[0, 0], pred5[0, 0], pred6[0, 0],
+                  pred7[0, 0], pred8[0, 0], pred9[0, 0]])
+    c2 = np.mean(
+        [pred1[0, 1], pred2[0, 1], pred3[0, 1],
+         pred4[0, 1], pred5[0, 1], pred6[0, 1],
+         pred7[0, 1], pred8[0, 1], pred9[0, 1]])
     if est_c1 is not None and not stop_temporal:
         c1_temp = est_c1.predict(c1_hist.reshape(1, -1))
         c2_temp = est_c2.predict(c2_hist.reshape(1, -1))
@@ -98,31 +122,32 @@ def run_global_cv(fold_iterator, data_dir, checkpoint_dir, logger, params_dict, 
         # Generators
         logger.info('############ FOLD #############')
         logger.info('Training folders are {}'.format(traindirs))
-        """
+        '''
         model1, est_c1, est_c2, res_df = train(traindirs, data_dir, upsample,
                                                params_dict, checkpoint_dir,
                                                logger, testdirs)
-        """
+        '''
         training_generator_1 = DataLoader(
             data_dir, traindirs, 32,
             width_template=60, upsample=upsample)
         res_df = training_generator_1.resolution_df
-        model = create_model(params_dict['width']+1,
-                             params_dict['h1'],
-                             params_dict['h2'],
-                             params_dict['h3'],
-                             embed_size=params_dict['embed_size'],
-                             drop_out_rate=params_dict['dropout_rate'],
-                             use_batch_norm=params_dict['use_batchnorm'])
-        model.load_weights(os.path.join(checkpoint_dir, 'model.h5'))
+        model1 = create_model(params_dict['width']+1,
+                              params_dict['h1'],
+                              params_dict['h2'],
+                              params_dict['h3'],
+                              embed_size=params_dict['embed_size'],
+                              drop_out_rate=params_dict['dropout_rate'],
+                              use_batch_norm=params_dict['use_batchnorm'])
+        model1.load_weights(os.path.join(checkpoint_dir, 'model1.h5'))
         est_c1 = load(os.path.join(checkpoint_dir, 'est_c1.joblib'))
         est_c2 = load(os.path.join(checkpoint_dir, 'est_c2.joblib'))
+        print(type(est_c1))
         # PREDICT WITH GLOBAL MATCHING + LOCAL MODEL ON TEST SET
         curr_fold_dist = []
         curr_fold_pix = []
         for k, testfolder in enumerate(testdirs):
             res_x, res_y = res_df.loc[
-                res_df.resolution_df['scan']
+                res_df['scan']
                 == testfolder, ['res_x', 'res_y']].values[0]
             annotation_dir = os.path.join(data_dir, testfolder, 'Annotation')
             img_dir = os.path.join(data_dir, testfolder, 'Data')
@@ -170,14 +195,8 @@ def run_global_cv(fold_iterator, data_dir, checkpoint_dir, logger, params_dict, 
                     xax)].reshape(1, len(yax), len(xax))
                 xax, yax = find_template_pixel(c1_init, c2_init,
                                                120, img_init.shape[1], img_init.shape[0])
-                template_init_2 = img_init[np.ravel(yax), np.ravel(
-                    xax)].reshape(1, len(yax), len(xax))
-                xax, yax = find_template_pixel(c1_init, c2_init,
-                                               30, img_init.shape[1], img_init.shape[0])
-                template_init_3 = img_init[np.ravel(yax), np.ravel(
-                    xax)].reshape(1, len(yax), len(xax))
                 c1, c2 = c1_init, c2_init
-                stop_temporal = False
+                stop_temporal = True
                 k = 0
                 for i in range(2, len(list_imgs)+1):
                     if i % 100 == 0:
@@ -199,7 +218,7 @@ def run_global_cv(fold_iterator, data_dir, checkpoint_dir, logger, params_dict, 
                                                                    img_current,
                                                                    params_dict,
                                                                    model1,
-                                                                   template_init_1, template_init_2, template_init_3,
+                                                                   template_init_1,
                                                                    c1_init, c2_init, logger, est_c1, est_c2, tmp[:, 0], tmp[:, 1])
                     else:
                         c1, c2, stop_temporal, k = get_next_center(k, stop_temporal,
@@ -207,7 +226,7 @@ def run_global_cv(fold_iterator, data_dir, checkpoint_dir, logger, params_dict, 
                                                                    img_current,
                                                                    params_dict,
                                                                    model1,
-                                                                   template_init_1, template_init_2, template_init_3,
+                                                                   template_init_1,
                                                                    c1_init, c2_init, logger)
                     # project back in init coords
                     if upsample:
@@ -498,8 +517,8 @@ def predict(testdirs, checkpoint_dir, data_dir, params_dict, upsample=False, res
 
 if __name__ == '__main__':
     np.random.seed(seed=42)
-    exp_name = 'final50_temporal2_epochs15_mix-NOJUMP5'
-    params_dict = {'dropout_rate': 0.5, 'n_epochs': 15,
+    exp_name = '10predForest_20epochs_noJump_noTemp'
+    params_dict = {'dropout_rate': 0.5, 'n_epochs': 20,
                    'h3': 0, 'embed_size': 256, 'width': 60, 'search_w': 1}
 
     # ============ DATA AND SAVING DIRS SETUP ========== #
