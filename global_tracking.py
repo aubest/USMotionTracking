@@ -85,16 +85,9 @@ def run_global_cv(fold_iterator, data_dir, checkpoint_dir, logger, params_dict, 
         # Generators
         logger.info('############ FOLD #############')
         logger.info('Training folders are {}'.format(traindirs))
-        training_generator = DataLoader(
-            data_dir, traindirs, 32,
-            width_template=params_dict['width'], upsample=upsample)
-        validation_generator = DataLoader(
-            data_dir, testdirs, 32,
-            width_template=params_dict['width'],
-            type='val', upsample=upsample)
         model1, model2, model3, est_c1, est_c2 = train(traindirs, data_dir, upsample,
                                                        params_dict, checkpoint_dir,
-                                                       logger, validation_generator)
+                                                       logger, val_dirs=testdirs)
         """
         model = create_model(params_dict['width']+1,
                          params_dict['h1'],
@@ -270,70 +263,85 @@ def run_global_cv(fold_iterator, data_dir, checkpoint_dir, logger, params_dict, 
                         np.std(eucl_dist_per_fold)))
 
 
-def train(traindirs, data_dir, upsample, params_dict, checkpointdir, logger, validation_gen=None):
+def train(traindirs, data_dir, upsample, params_dict, checkpointdir, logger, validation_dirs=None):
     if logger is not None:
         logger.info('Training folders are {}'.format(traindirs))
     else:
         print('Training folders are {}'.format(traindirs))
-    training_generator = DataLoader(
+    training_generator_1 = DataLoader(
         data_dir, traindirs, 32,
-        width_template=params_dict['width'], upsample=upsample)
+        width_template=60, upsample=upsample)
+    training_generator_2 = DataLoader(
+        data_dir, traindirs, 32,
+        width_template=120, upsample=upsample)
+    training_generator_3 = DataLoader(
+        data_dir, traindirs, 32,
+        width_template=30, upsample=upsample)
     earl = keras.callbacks.EarlyStopping(monitor='val_loss', patience=3)
     # Design model
     model1 = create_model(60+1,
-                         params_dict['h1'],
-                         params_dict['h2'],
-                         params_dict['h3'],
-                         embed_size=params_dict['embed_size'],
-                         drop_out_rate=params_dict['dropout_rate'],
-                         use_batch_norm=params_dict['use_batchnorm'])
+                          params_dict['h1'],
+                          params_dict['h2'],
+                          params_dict['h3'],
+                          embed_size=params_dict['embed_size'],
+                          drop_out_rate=params_dict['dropout_rate'],
+                          use_batch_norm=params_dict['use_batchnorm'])
     model2 = create_model(120+1,
-                         params_dict['h1'],
-                         params_dict['h2'],
-                         params_dict['h3'],
-                         embed_size=params_dict['embed_size'],
-                         drop_out_rate=params_dict['dropout_rate'],
-                         use_batch_norm=params_dict['use_batchnorm'])
+                          params_dict['h1'],
+                          params_dict['h2'],
+                          params_dict['h3'],
+                          embed_size=params_dict['embed_size'],
+                          drop_out_rate=params_dict['dropout_rate'],
+                          use_batch_norm=params_dict['use_batchnorm'])
     model3 = create_model(30+1,
-                         params_dict['h1'],
-                         params_dict['h2'],
-                         params_dict['h3'],
-                         embed_size=params_dict['embed_size'],
-                         drop_out_rate=params_dict['dropout_rate'],
-                         use_batch_norm=params_dict['use_batchnorm'])
+                          params_dict['h1'],
+                          params_dict['h2'],
+                          params_dict['h3'],
+                          embed_size=params_dict['embed_size'],
+                          drop_out_rate=params_dict['dropout_rate'],
+                          use_batch_norm=params_dict['use_batchnorm'])
     # Train local Net
-    if validation_gen is None:
-        model1.fit_generator(generator=training_generator,
-                            use_multiprocessing=True,
-                            epochs=params_dict['n_epochs'],
-                            workers=4, max_queue_size=20,
-                            callbacks=[earl])
-        model2.fit_generator(generator=training_generator,
-                            use_multiprocessing=True,
-                            epochs=params_dict['n_epochs'],
-                            workers=4, max_queue_size=20,
-                            callbacks=[earl])
-        model3.fit_generator(generator=training_generator,
-                            use_multiprocessing=True,
-                            epochs=params_dict['n_epochs'],
-                            workers=4, max_queue_size=20,
-                            callbacks=[earl])
+    if validation_dirs is None:
+        model1.fit_generator(generator=training_generator_1,
+                             use_multiprocessing=True,
+                             epochs=params_dict['n_epochs'],
+                             workers=4, max_queue_size=20,
+                             callbacks=[earl])
+        model2.fit_generator(generator=training_generator_2,
+                             use_multiprocessing=True,
+                             epochs=params_dict['n_epochs'],
+                             workers=4, max_queue_size=20,
+                             callbacks=[earl])
+        model3.fit_generator(generator=training_generator_3,
+                             use_multiprocessing=True,
+                             epochs=params_dict['n_epochs'],
+                             workers=4, max_queue_size=20,
+                             callbacks=[earl])
     else:
-        model1.fit_generator(generator=training_generator,
-                            validation_data=validation_gen,
-                            use_multiprocessing=True,
-                            epochs=params_dict['n_epochs'],
-                            workers=4, max_queue_size=20)
-        model2.fit_generator(generator=training_generator,
-                            validation_data=validation_gen,
-                            use_multiprocessing=True,
-                            epochs=params_dict['n_epochs'],
-                            workers=4, max_queue_size=20)
-        model3.fit_generator(generator=training_generator,
-                            validation_data=validation_gen,
-                            use_multiprocessing=True,
-                            epochs=params_dict['n_epochs'],
-                            workers=4, max_queue_size=20)
+        val_gen_1 = DataLoader(
+            data_dir, validation_dirs, 32,
+            width_template=60, upsample=upsample)
+        val_gen_2 = DataLoader(
+            data_dir, validation_dirs, 32,
+            width_template=120, upsample=upsample)
+        val_gen_3 = DataLoader(
+            data_dir, validation_dirs, 32,
+            width_template=30, upsample=upsample)
+        model1.fit_generator(generator=training_generator_1,
+                             validation_data=val_gen_1,
+                             use_multiprocessing=True,
+                             epochs=params_dict['n_epochs'],
+                             workers=4, max_queue_size=20)
+        model2.fit_generator(generator=training_generator_2,
+                             validation_data=val_gen_2,
+                             use_multiprocessing=True,
+                             epochs=params_dict['n_epochs'],
+                             workers=4, max_queue_size=20)
+        model3.fit_generator(generator=training_generator_3,
+                             validation_data=val_gen_3,
+                             use_multiprocessing=True,
+                             epochs=params_dict['n_epochs'],
+                             workers=4, max_queue_size=20)
     if logger is not None:
         logger.info('Local Net trained')
         logger.info('Stopped epoch {}'.format(earl.stopped_epoch))
@@ -346,9 +354,6 @@ def train(traindirs, data_dir, upsample, params_dict, checkpointdir, logger, val
             logger.info('Getting temporal training set for {}'.format(folder))
         else:
             print('Getting temporal training set for {}'.format(folder))
-        res_x, res_y = training_generator.resolution_df.loc[
-            training_generator.resolution_df['scan']
-            == folder, ['res_x', 'res_y']].values[0]
         img_dir = os.path.join(data_dir, folder, 'Data')
         annotation_dir = os.path.join(data_dir, folder, 'Annotation')
         list_label_files = [os.path.join(annotation_dir, dI) for dI
@@ -429,6 +434,7 @@ def train(traindirs, data_dir, upsample, params_dict, checkpointdir, logger, val
     dump(est_c1, os.path.join(checkpoint_dir, 'est_c1.joblib'))
     dump(est_c2, os.path.join(checkpoint_dir, 'est_c2.joblib'))
     return model1, model2, model3, est_c1, est_c2
+
 
 '''
 def predict(testdirs, checkpoint_dir, data_dir, params_dict, upsample=False, resolution_df=None):
